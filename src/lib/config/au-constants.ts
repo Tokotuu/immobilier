@@ -59,6 +59,19 @@ export const QLD_FIRST_HOME_BENEFITS = {
   firstHomeGrantCap: 750000, // Property value cap for grant
 } as const;
 
+// Australian Government 5% Deposit Scheme (from Oct 1, 2025)
+export const FIVE_PERCENT_DEPOSIT_SCHEME = {
+  enabled: true,
+  minimumDeposit: 0.05, // 5% for first home buyers
+  minimumDepositSingleParent: 0.02, // 2% for single parents
+  propertyCapBrisbane: 1000000, // $1M for Brisbane (increased from $700k)
+  propertyCapRegionalQLD: 1000000, // $1M for Gold Coast, Sunshine Coast
+  propertyCapRestOfQLD: 550000, // $550k for rest of Queensland
+  noLMI: true, // Government guarantees up to 15%, so no LMI required
+  noIncomeCap: true, // Income caps removed from Oct 1, 2025
+  unlimitedPlaces: true, // Unlimited spots available
+} as const;
+
 // Investment Assumptions
 export const INVESTMENT_ASSUMPTIONS = {
   propertyGrowthRate: 0.05, // 5% annual property appreciation

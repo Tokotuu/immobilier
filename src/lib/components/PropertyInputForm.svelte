@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PropertyInputs } from '$lib/calculations/calculator';
-  import { LOAN_DEFAULTS } from '$lib/config/au-constants';
+  import { LOAN_DEFAULTS, FIVE_PERCENT_DEPOSIT_SCHEME } from '$lib/config/au-constants';
 
   interface Props {
     onCalculate: (inputs: PropertyInputs) => void;
@@ -9,13 +9,14 @@
   let { onCalculate }: Props = $props();
 
   // Form state
-  let propertyPrice = $state(750000);
-  let depositPercent = $state(20);
+  let propertyPrice = $state(100000);
+  let depositPercent = $state(5);
   let isFirstHome = $state(true);
-  let annualIncome = $state(100000);
+  let use5PercentScheme = $state(false);
+  let annualIncome = $state(300000);
   let loanInterestRate = $state(LOAN_DEFAULTS.interestRate * 100); // Convert to percentage
   let loanTermYears = $state(LOAN_DEFAULTS.loanTermYears);
-  let weeklyRent = $state(600);
+  let weeklyRent = $state(800);
 
   // Advanced options
   let showAdvanced = $state(false);
@@ -31,6 +32,13 @@
   let loanAmount = $derived(propertyPrice - deposit);
   let lvr = $derived((loanAmount / propertyPrice) * 100);
 
+  // Check eligibility for 5% deposit scheme
+  let isEligibleFor5PercentScheme = $derived(
+    isFirstHome &&
+    propertyPrice <= FIVE_PERCENT_DEPOSIT_SCHEME.propertyCapBrisbane &&
+    depositPercent >= FIVE_PERCENT_DEPOSIT_SCHEME.minimumDeposit * 100
+  );
+
   function handleSubmit(e: Event) {
     e.preventDefault();
 
@@ -38,6 +46,7 @@
       propertyPrice,
       deposit,
       isFirstHome,
+      use5PercentScheme: use5PercentScheme && isEligibleFor5PercentScheme,
       annualIncome,
       loanInterestRate: loanInterestRate / 100,
       loanTermYears,
@@ -130,8 +139,8 @@
         type="number"
         id="annualIncome"
         bind:value={annualIncome}
-        step="5000"
-        min="18200"
+        step="1000"
+        min="0"
         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
       />
       <p class="mt-1 text-sm text-gray-500">{formatCurrency(annualIncome)}</p>
@@ -168,7 +177,7 @@
     </div>
   </div>
 
-  <div>
+  <div class="space-y-3">
     <label class="flex items-center">
       <input
         type="checkbox"
@@ -179,6 +188,38 @@
         First Home Buyer (eligible for QLD stamp duty concession)
       </span>
     </label>
+
+    {#if isFirstHome}
+      <div class="ml-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <label class="flex items-start">
+          <input
+            type="checkbox"
+            bind:checked={use5PercentScheme}
+            disabled={!isEligibleFor5PercentScheme}
+            class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+          />
+          <div class="ml-3 flex-1">
+            <span class="text-sm font-medium text-gray-900">
+              Use Australian Government 5% Deposit Scheme
+            </span>
+            <p class="text-xs text-gray-600 mt-1">
+              Save on LMI with as little as 5% deposit • Property cap: {formatCurrency(FIVE_PERCENT_DEPOSIT_SCHEME.propertyCapBrisbane)}
+            </p>
+            {#if !isEligibleFor5PercentScheme}
+              <p class="text-xs text-red-600 mt-2 font-medium">
+                {#if propertyPrice > FIVE_PERCENT_DEPOSIT_SCHEME.propertyCapBrisbane}
+                  ⚠ Property price exceeds ${formatCurrency(FIVE_PERCENT_DEPOSIT_SCHEME.propertyCapBrisbane)} cap
+                {:else if depositPercent < FIVE_PERCENT_DEPOSIT_SCHEME.minimumDeposit * 100}
+                  ⚠ Minimum 5% deposit required
+                {:else}
+                  ⚠ Not eligible (must be first home buyer)
+                {/if}
+              </p>
+            {/if}
+          </div>
+        </label>
+      </div>
+    {/if}
   </div>
 
   <!-- Advanced Options -->

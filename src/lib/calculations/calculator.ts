@@ -7,12 +7,14 @@ import {
   LOAN_DEFAULTS,
   INVESTMENT_ASSUMPTIONS,
   TRANSACTION_COSTS,
+  FIVE_PERCENT_DEPOSIT_SCHEME,
 } from '$lib/config/au-constants';
 
 export interface PropertyInputs {
   propertyPrice: number;
   deposit: number;
   isFirstHome: boolean;
+  use5PercentScheme?: boolean; // Australian Government 5% Deposit Scheme
   annualIncome: number;
   loanInterestRate: number;
   loanTermYears: number;
@@ -109,9 +111,27 @@ export function calculateStampDuty(propertyPrice: number, isFirstHome: boolean):
 /**
  * Calculate Lenders Mortgage Insurance
  */
-export function calculateLMI(loanAmount: number, propertyPrice: number): number {
+export function calculateLMI(
+  loanAmount: number,
+  propertyPrice: number,
+  isFirstHome: boolean = false,
+  use5PercentScheme: boolean = false
+): number {
   const lvr = loanAmount / propertyPrice;
+  const depositPercent = 1 - lvr;
 
+  // Check if eligible for 5% Deposit Scheme
+  if (
+    use5PercentScheme &&
+    isFirstHome &&
+    FIVE_PERCENT_DEPOSIT_SCHEME.enabled &&
+    propertyPrice <= FIVE_PERCENT_DEPOSIT_SCHEME.propertyCapBrisbane &&
+    depositPercent >= FIVE_PERCENT_DEPOSIT_SCHEME.minimumDeposit
+  ) {
+    return 0; // No LMI under government scheme
+  }
+
+  // Standard LMI rules
   if (lvr <= LOAN_DEFAULTS.lvrNoLMI) {
     return 0;
   }
@@ -164,7 +184,12 @@ export function calculateRentVsBuy(inputs: PropertyInputs, yearsToProject: numbe
 
   // Upfront costs
   const stampDuty = calculateStampDuty(inputs.propertyPrice, inputs.isFirstHome);
-  const lmi = calculateLMI(loanAmount, inputs.propertyPrice);
+  const lmi = calculateLMI(
+    loanAmount,
+    inputs.propertyPrice,
+    inputs.isFirstHome,
+    inputs.use5PercentScheme ?? false
+  );
   const legalFees = TRANSACTION_COSTS.buyerLegalFees;
   const inspections = TRANSACTION_COSTS.buildingInspection + TRANSACTION_COSTS.pestInspection;
   const totalUpfront = stampDuty + lmi + legalFees + inspections;

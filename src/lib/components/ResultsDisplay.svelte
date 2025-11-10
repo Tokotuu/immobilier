@@ -156,15 +156,27 @@
           <span>Stamp Duty:</span>
           <span>{formatCurrency(result.upfrontCosts.stampDuty)}</span>
         </div>
-        <div class="flex justify-between">
+        <div class="flex justify-between items-center">
           <span>LMI:</span>
-          <span>{formatCurrency(result.upfrontCosts.lmi)}</span>
+          <div class="text-right">
+            <span class:text-green-600={result.upfrontCosts.lmi === 0 && result.loanDetails.lvr > 80}>
+              {formatCurrency(result.upfrontCosts.lmi)}
+            </span>
+            {#if result.upfrontCosts.lmi === 0 && result.loanDetails.lvr > 80}
+              <div class="text-xs text-green-600 font-medium">5% Scheme</div>
+            {/if}
+          </div>
         </div>
         <div class="flex justify-between">
           <span>Legal & Inspections:</span>
           <span>{formatCurrency(result.upfrontCosts.legalFees + result.upfrontCosts.inspections)}</span>
         </div>
       </div>
+      {#if result.upfrontCosts.lmi === 0 && result.loanDetails.lvr > 80}
+        <div class="mt-4 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-700">
+          🎉 Saving on LMI via Australian Government 5% Deposit Scheme
+        </div>
+      {/if}
     </div>
 
     <div class="bg-white p-6 rounded-lg shadow-md">
