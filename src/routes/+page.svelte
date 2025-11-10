@@ -2,6 +2,13 @@
   import PropertyInputForm from '$lib/components/PropertyInputForm.svelte';
   import ResultsDisplay from '$lib/components/ResultsDisplay.svelte';
   import { calculateRentVsBuy, type PropertyInputs, type CalculationResult } from '$lib/calculations/calculator';
+  import type { PageData } from './$types';
+
+  interface Props {
+    data: PageData;
+  }
+
+  let { data }: Props = $props();
 
   let result = $state<CalculationResult | null>(null);
   let showResults = $state(false);
@@ -21,6 +28,12 @@
     result = null;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+
+  // Format quarter period (e.g., "2024-Q3" -> "Q3 2024")
+  function formatQuarter(period: string): string {
+    const [year, quarter] = period.split('-');
+    return `${quarter} ${year}`;
+  }
 </script>
 
 <svelte:head>
@@ -38,14 +51,32 @@
       <p class="mt-2 text-gray-600">
         Compare the financial outcomes of renting vs buying in Brisbane, Queensland
       </p>
-      <div class="mt-2 flex items-center gap-2 text-sm text-gray-500">
+      <div class="mt-2 flex items-center gap-2 text-sm text-gray-500 flex-wrap">
         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
           2024-2025 Tax Year
         </span>
         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
           QLD Stamp Duty Rates
         </span>
+        {#if data.absData}
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+            📊 ABS Official Data ({formatQuarter(data.absData.period)})
+          </span>
+        {/if}
       </div>
+
+      {#if data.absData}
+        <div class="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+          <p class="text-sm font-medium text-purple-900 mb-1">
+            Official Brisbane Growth Rates (10-year average from ABS):
+          </p>
+          <div class="flex gap-4 text-xs text-purple-800">
+            <span>Houses: <strong>{(data.absData.houseGrowthRate * 100).toFixed(2)}%/year</strong></span>
+            <span>Units: <strong>{(data.absData.unitGrowthRate * 100).toFixed(2)}%/year</strong></span>
+            <span>All Residential: <strong>{(data.absData.allResidentialGrowthRate * 100).toFixed(2)}%/year</strong></span>
+          </div>
+        </div>
+      {/if}
     </div>
   </header>
 
@@ -53,7 +84,7 @@
   <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <!-- Input Form -->
     <div class="mb-8">
-      <PropertyInputForm onCalculate={handleCalculate} />
+      <PropertyInputForm onCalculate={handleCalculate} absData={data.absData} />
     </div>
 
     <!-- Results Section -->

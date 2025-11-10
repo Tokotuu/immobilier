@@ -1,13 +1,15 @@
 <script lang="ts">
   import type { PropertyInputs } from '$lib/calculations/calculator';
+  import type { ABSGrowthRate } from '$lib/api/abs-api';
   import { LOAN_DEFAULTS, FIVE_PERCENT_DEPOSIT_SCHEME } from '$lib/config/au-constants';
   import { BRISBANE_SUBURBS, getGrowthRate } from '$lib/config/brisbane-suburbs';
 
   interface Props {
     onCalculate: (inputs: PropertyInputs) => void;
+    absData?: ABSGrowthRate | null;
   }
 
-  let { onCalculate }: Props = $props();
+  let { onCalculate, absData = null }: Props = $props();
 
   // Form state
   let propertyPrice = $state(100000);
@@ -35,9 +37,24 @@
 
   // Auto-calculated growth rate based on suburb and property type
   let autoPropertyGrowthRate = $derived(() => {
-    if (!selectedSuburb) return 5.1; // Brisbane 30-year average
+    // If no suburb selected, use ABS official data if available
+    if (!selectedSuburb) {
+      if (absData) {
+        // Use official ABS data based on property type
+        if (propertyType === 'house') {
+          return absData.houseGrowthRate * 100;
+        } else if (propertyType === 'unit') {
+          return absData.unitGrowthRate * 100;
+        } else {
+          // Townhouse: average of house and unit from ABS
+          return ((absData.houseGrowthRate + absData.unitGrowthRate) / 2) * 100;
+        }
+      }
+      // Fallback to Brisbane 30-year average
+      return 5.1;
+    }
 
-    // Townhouses use average of house and unit rates
+    // Use suburb-specific data
     if (propertyType === 'townhouse') {
       const houseRate = getGrowthRate(selectedSuburb, 'house');
       const unitRate = getGrowthRate(selectedSuburb, 'unit');
@@ -149,7 +166,9 @@
         bind:value={selectedSuburb}
         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
       >
-        <option value="">Brisbane Average (5.1%/year)</option>
+        <option value="">
+          {absData ? 'Brisbane Average (ABS Official Data)' : 'Brisbane Average (5.1%/year)'}
+        </option>
         <optgroup label="Inner Brisbane (0-10km from CBD)">
           {#each BRISBANE_SUBURBS.filter(s => s.region === 'inner') as suburb}
             <option value={suburb.name}>{suburb.name}</option>

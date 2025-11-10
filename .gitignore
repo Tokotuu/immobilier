@@ -25,3 +25,6 @@ vite.config.ts.timestamp-*
 # Screenshots (temporary)
 screenshot.png
 Screenshot*.png
+
+# Data cache
+/data
