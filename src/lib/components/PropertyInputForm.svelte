@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PropertyInputs } from '$lib/calculations/calculator';
   import { LOAN_DEFAULTS, FIVE_PERCENT_DEPOSIT_SCHEME } from '$lib/config/au-constants';
+  import { BRISBANE_SUBURBS, getGrowthRate } from '$lib/config/brisbane-suburbs';
 
   interface Props {
     onCalculate: (inputs: PropertyInputs) => void;
@@ -18,14 +19,38 @@
   let loanTermYears = $state(LOAN_DEFAULTS.loanTermYears);
   let weeklyRent = $state(800);
 
+  // Property characteristics
+  let propertyType = $state<'house' | 'unit' | 'townhouse'>('house');
+  let selectedSuburb = $state<string>('');
+  let useAutoGrowthRate = $state(true); // Auto-calculate growth rate from selections
+
   // Advanced options
   let showAdvanced = $state(false);
   let councilRates = $state(2000);
   let waterRates = $state(1200);
   let insurance = $state(1500);
   let maintenanceRate = $state(1.0); // As percentage
-  let propertyGrowthRate = $state(5.0); // As percentage
+  let manualPropertyGrowthRate = $state(5.0); // Manual override
   let rentalYieldGrowthRate = $state(3.0); // As percentage
+
+  // Auto-calculated growth rate based on suburb and property type
+  let autoPropertyGrowthRate = $derived(() => {
+    if (!selectedSuburb) return 5.1; // Brisbane 30-year average
+
+    // Townhouses use average of house and unit rates
+    if (propertyType === 'townhouse') {
+      const houseRate = getGrowthRate(selectedSuburb, 'house');
+      const unitRate = getGrowthRate(selectedSuburb, 'unit');
+      return ((houseRate + unitRate) / 2) * 100; // Convert to percentage
+    }
+
+    return getGrowthRate(selectedSuburb, propertyType === 'house' ? 'house' : 'unit') * 100;
+  });
+
+  // Final growth rate (auto or manual)
+  let propertyGrowthRate = $derived(
+    useAutoGrowthRate ? autoPropertyGrowthRate : manualPropertyGrowthRate
+  );
 
   // Computed values
   let deposit = $derived(propertyPrice * (depositPercent / 100));
@@ -51,12 +76,13 @@
       loanInterestRate: loanInterestRate / 100,
       loanTermYears,
       weeklyRent,
+      // Always include property growth rate (now auto-calculated from suburb/type)
+      propertyGrowthRate: propertyGrowthRate / 100,
       ...(showAdvanced && {
         councilRates,
         waterRates,
         insurance,
         maintenanceRate: maintenanceRate / 100,
-        propertyGrowthRate: propertyGrowthRate / 100,
         rentalYieldGrowthRate: rentalYieldGrowthRate / 100,
       }),
     };
@@ -94,6 +120,62 @@
         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
       />
       <p class="mt-1 text-sm text-gray-500">{formatCurrency(propertyPrice)}</p>
+    </div>
+
+    <div>
+      <label for="propertyType" class="block text-sm font-medium text-gray-700">
+        Property Type
+      </label>
+      <select
+        id="propertyType"
+        bind:value={propertyType}
+        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+      >
+        <option value="house">House</option>
+        <option value="unit">Unit/Apartment</option>
+        <option value="townhouse">Townhouse</option>
+      </select>
+      <p class="mt-1 text-sm text-gray-500">
+        Affects growth rate estimation
+      </p>
+    </div>
+
+    <div class="md:col-span-2">
+      <label for="suburb" class="block text-sm font-medium text-gray-700">
+        Suburb (Optional - for accurate growth rate)
+      </label>
+      <select
+        id="suburb"
+        bind:value={selectedSuburb}
+        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+      >
+        <option value="">Brisbane Average (5.1%/year)</option>
+        <optgroup label="Inner Brisbane (0-10km from CBD)">
+          {#each BRISBANE_SUBURBS.filter(s => s.region === 'inner') as suburb}
+            <option value={suburb.name}>{suburb.name}</option>
+          {/each}
+        </optgroup>
+        <optgroup label="Middle Ring (10-20km from CBD)">
+          {#each BRISBANE_SUBURBS.filter(s => s.region === 'middle') as suburb}
+            <option value={suburb.name}>{suburb.name}</option>
+          {/each}
+        </optgroup>
+        <optgroup label="Outer Brisbane (20-40km from CBD)">
+          {#each BRISBANE_SUBURBS.filter(s => s.region === 'outer') as suburb}
+            <option value={suburb.name}>{suburb.name}</option>
+          {/each}
+        </optgroup>
+        <optgroup label="Regional Centres">
+          {#each BRISBANE_SUBURBS.filter(s => s.region === 'regional') as suburb}
+            <option value={suburb.name}>{suburb.name}</option>
+          {/each}
+        </optgroup>
+      </select>
+      {#if selectedSuburb}
+        <p class="mt-1 text-sm text-green-600 font-medium">
+          📍 Estimated growth rate: {propertyGrowthRate.toFixed(2)}%/year ({propertyType})
+        </p>
+      {/if}
     </div>
 
     <div>
@@ -287,16 +369,36 @@
         </div>
 
         <div>
-          <label for="propertyGrowth" class="block text-sm font-medium text-gray-700">
-            Property Growth Rate (%/year)
-          </label>
-          <input
-            type="number"
-            id="propertyGrowth"
-            bind:value={propertyGrowthRate}
-            step="0.5"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          />
+          <div class="flex items-center justify-between mb-2">
+            <label for="propertyGrowth" class="block text-sm font-medium text-gray-700">
+              Property Growth Rate (%/year)
+            </label>
+            <label class="flex items-center text-xs text-gray-600">
+              <input
+                type="checkbox"
+                bind:checked={useAutoGrowthRate}
+                class="mr-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Auto-calculate
+            </label>
+          </div>
+          {#if useAutoGrowthRate}
+            <div class="mt-1 p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <p class="text-sm text-blue-800 font-medium">
+                {propertyGrowthRate.toFixed(2)}% (based on {selectedSuburb || 'Brisbane average'} {propertyType})
+              </p>
+            </div>
+          {:else}
+            <input
+              type="number"
+              id="propertyGrowth"
+              bind:value={manualPropertyGrowthRate}
+              step="0.5"
+              min="0"
+              max="20"
+              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            />
+          {/if}
         </div>
 
         <div>
