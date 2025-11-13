@@ -10,6 +10,10 @@
   let { result }: Props = $props();
 
   function formatCurrency(value: number): string {
+    if (isNaN(value) || value === null || value === undefined) {
+      console.error('Invalid value passed to formatCurrency:', value);
+      return '$0';
+    }
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
       currency: 'AUD',

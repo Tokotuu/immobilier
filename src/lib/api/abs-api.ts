@@ -22,14 +22,15 @@ export const ABS_REGIONS = {
 
 // Measure codes
 export const ABS_MEASURES = {
-  INDEX_HOUSES: '1', // Index Numbers - Houses
-  INDEX_UNITS: '2',  // Index Numbers - Attached dwellings (units)
-  INDEX_ALL: '3',    // Index Numbers - All residential
+  MEDIAN_PRICE_HOUSES: '3', // Median Price - Established House Transfers (in $'000)
+  MEDIAN_PRICE_UNITS: '4',  // Median Price - Attached Dwelling Transfers (in $'000)
+  TRANSFER_COUNT_HOUSES: '1', // Number of Established House Transfers
+  TRANSFER_COUNT_UNITS: '2',  // Number of Attached Dwelling Transfers
 } as const;
 
 export interface ABSDataPoint {
   period: string; // e.g., "2024-Q3"
-  value: number;  // Index value
+  value: number;  // Median price in $'000 (e.g., 757 = $757,000)
 }
 
 export interface ABSPropertyData {
@@ -40,30 +41,61 @@ export interface ABSPropertyData {
   lastUpdated: string;
 }
 
+export interface GrowthScenarios {
+  fiveYear: number;   // 5-year CAGR (optimistic - recent trends)
+  tenYear: number;    // 10-year CAGR (balanced - full cycle)
+  fifteenYear: number; // 15-year CAGR (conservative - longer view)
+}
+
 export interface ABSGrowthRate {
   region: string;
-  houseGrowthRate: number; // Annual growth rate (decimal)
-  unitGrowthRate: number;  // Annual growth rate (decimal)
-  allResidentialGrowthRate: number;
-  period: string; // e.g., "2024-Q3"
-  lastUpdated: string;
+
+  // Growth rate scenarios for different property types
+  houses: GrowthScenarios;
+  units: GrowthScenarios;
+  allResidential: GrowthScenarios;
+
+  // Historical data for transparency
+  historicalData: {
+    houses: ABSDataPoint[];
+    units: ABSDataPoint[];
+  };
+
+  // Metadata
+  metadata: {
+    firstPeriod: string;
+    latestPeriod: string;
+    totalQuarters: number;
+    lastUpdated: string;
+  };
+
   source: 'ABS_RES_DWELL';
+
+  // Backward compatibility (deprecated - use houses.tenYear instead)
+  /** @deprecated Use houses.tenYear instead */
+  houseGrowthRate?: number;
+  /** @deprecated Use units.tenYear instead */
+  unitGrowthRate?: number;
+  /** @deprecated Use allResidential.tenYear instead */
+  allResidentialGrowthRate?: number;
+  /** @deprecated Use metadata.latestPeriod instead */
+  period?: string;
+  /** @deprecated Use metadata.lastUpdated instead */
+  lastUpdated?: string;
 }
 
 /**
- * Fetch residential property index data from ABS
+ * Fetch residential property median price data from ABS
+ * Fetches all available historical data (back to 2002)
  */
 export async function fetchABSPropertyData(
   region: string = ABS_REGIONS.BRISBANE,
-  measure: string = ABS_MEASURES.INDEX_ALL,
-  yearsOfData: number = 10
+  measure: string = ABS_MEASURES.MEDIAN_PRICE_HOUSES
 ): Promise<ABSPropertyData> {
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setFullYear(endDate.getFullYear() - yearsOfData);
+  // Fetch ALL available data - ABS has data back to 2002
+  const startPeriod = '2002-Q1';
 
-  // Format dates as YYYY-QN
-  const startPeriod = `${startDate.getFullYear()}-Q1`;
+  const endDate = new Date();
   const endYear = endDate.getFullYear();
   const endQuarter = Math.floor(endDate.getMonth() / 3) + 1;
   const endPeriod = `${endYear}-Q${endQuarter}`;
@@ -106,26 +138,38 @@ export async function fetchABSPropertyData(
  */
 function parseSDMXJSON(jsonData: any): ABSDataPoint[] {
   try {
-    // SDMX-JSON structure: dataSets[0].observations
-    const observations = jsonData.data?.dataSets?.[0]?.observations;
-    const dimensions = jsonData.data?.structure?.dimensions?.observation;
+    // SDMX-JSON structure: dataSets[0].series (not observations)
+    const dataSet = jsonData.data?.dataSets?.[0];
+    const series = dataSet?.series;
+    const dimensions = jsonData.data?.structure?.dimensions;
 
-    if (!observations || !dimensions) {
+    if (!series || !dimensions) {
       throw new Error('Invalid SDMX-JSON structure');
     }
 
-    // Find the TIME_PERIOD dimension index
-    const timeDimension = dimensions.find((d: any) => d.id === 'TIME_PERIOD');
+    // Find the TIME_PERIOD dimension (in observation dimensions)
+    const timeDimension = dimensions.observation?.find((d: any) => d.id === 'TIME_PERIOD');
     if (!timeDimension) {
       throw new Error('TIME_PERIOD dimension not found');
     }
 
     const dataPoints: ABSDataPoint[] = [];
 
-    // Observations is an object with keys like "0:0" where first number is dimension index
-    for (const [key, valueArray] of Object.entries(observations)) {
-      const [timeIndex] = key.split(':').map(Number);
-      const period = timeDimension.values[timeIndex].id;
+    // Get the first (and usually only) series
+    // Series is keyed like "0:0:0" (measure:region:frequency)
+    const seriesKey = Object.keys(series)[0];
+    if (!seriesKey) {
+      throw new Error('No series data found');
+    }
+
+    const observations = series[seriesKey].observations;
+    if (!observations) {
+      throw new Error('No observations found in series');
+    }
+
+    // Observations is an object with keys like "0", "1", "2" (time indices)
+    for (const [timeIndex, valueArray] of Object.entries(observations)) {
+      const period = timeDimension.values[parseInt(timeIndex)].id;
       const value = (valueArray as number[])[0];
 
       dataPoints.push({ period, value });
@@ -140,7 +184,7 @@ function parseSDMXJSON(jsonData: any): ABSDataPoint[] {
 }
 
 /**
- * Calculate annual growth rate from quarterly index data
+ * Calculate annual growth rate from quarterly median price data
  */
 export function calculateGrowthRate(data: ABSDataPoint[], yearsToAverage: number = 10): number {
   if (data.length < 4) {
@@ -149,11 +193,14 @@ export function calculateGrowthRate(data: ABSDataPoint[], yearsToAverage: number
 
   // Get the most recent value
   const latestValue = data[data.length - 1].value;
-  const latestPeriod = data[data.length - 1].period;
 
   // Get value from yearsToAverage ago (or as far back as we have)
   const quartersBack = Math.min(yearsToAverage * 4, data.length - 1);
   const oldValue = data[data.length - 1 - quartersBack].value;
+
+  if (oldValue === 0) {
+    throw new Error('Invalid data: zero or negative prices');
+  }
 
   // Calculate compound annual growth rate (CAGR)
   const years = quartersBack / 4;
@@ -163,33 +210,78 @@ export function calculateGrowthRate(data: ABSDataPoint[], yearsToAverage: number
 }
 
 /**
- * Fetch Brisbane property growth rates (houses, units, all residential)
+ * Calculate growth scenarios for different timeframes
+ */
+export function calculateGrowthScenarios(data: ABSDataPoint[]): GrowthScenarios {
+  if (data.length < 20) { // At least 5 years of data
+    throw new Error('Insufficient data to calculate scenarios (minimum 5 years required)');
+  }
+
+  return {
+    fiveYear: calculateGrowthRate(data, 5),
+    tenYear: calculateGrowthRate(data, 10),
+    fifteenYear: calculateGrowthRate(data, 15),
+  };
+}
+
+/**
+ * Fetch Brisbane property growth rates with multiple scenarios
+ * Returns all available historical data and 5/10/15-year growth rates
  */
 export async function fetchBrisbaneGrowthRates(): Promise<ABSGrowthRate> {
   try {
-    // Fetch data for all property types
-    const [housesData, unitsData, allResidentialData] = await Promise.all([
-      fetchABSPropertyData(ABS_REGIONS.BRISBANE, ABS_MEASURES.INDEX_HOUSES, 10),
-      fetchABSPropertyData(ABS_REGIONS.BRISBANE, ABS_MEASURES.INDEX_UNITS, 10),
-      fetchABSPropertyData(ABS_REGIONS.BRISBANE, ABS_MEASURES.INDEX_ALL, 10),
+    // Fetch ALL available historical data for both property types
+    const [housesData, unitsData] = await Promise.all([
+      fetchABSPropertyData(ABS_REGIONS.BRISBANE, ABS_MEASURES.MEDIAN_PRICE_HOUSES),
+      fetchABSPropertyData(ABS_REGIONS.BRISBANE, ABS_MEASURES.MEDIAN_PRICE_UNITS),
     ]);
 
-    // Calculate 10-year average growth rates
-    const houseGrowthRate = calculateGrowthRate(housesData.data, 10);
-    const unitGrowthRate = calculateGrowthRate(unitsData.data, 10);
-    const allResidentialGrowthRate = calculateGrowthRate(allResidentialData.data, 10);
+    // Calculate growth scenarios for each property type
+    const houseScenarios = calculateGrowthScenarios(housesData.data);
+    const unitScenarios = calculateGrowthScenarios(unitsData.data);
 
-    // Get latest period
-    const latestPeriod = allResidentialData.data[allResidentialData.data.length - 1].period;
+    // Calculate weighted average scenarios (60% houses, 40% units - typical Brisbane mix)
+    const allResidentialScenarios: GrowthScenarios = {
+      fiveYear: houseScenarios.fiveYear * 0.6 + unitScenarios.fiveYear * 0.4,
+      tenYear: houseScenarios.tenYear * 0.6 + unitScenarios.tenYear * 0.4,
+      fifteenYear: houseScenarios.fifteenYear * 0.6 + unitScenarios.fifteenYear * 0.4,
+    };
+
+    // Get metadata from houses data (both should have same periods)
+    const firstPeriod = housesData.data[0].period;
+    const latestPeriod = housesData.data[housesData.data.length - 1].period;
+    const totalQuarters = housesData.data.length;
 
     return {
       region: 'Brisbane',
-      houseGrowthRate,
-      unitGrowthRate,
-      allResidentialGrowthRate,
+
+      // Growth scenarios by property type
+      houses: houseScenarios,
+      units: unitScenarios,
+      allResidential: allResidentialScenarios,
+
+      // Store all historical data
+      historicalData: {
+        houses: housesData.data,
+        units: unitsData.data,
+      },
+
+      // Metadata
+      metadata: {
+        firstPeriod,
+        latestPeriod,
+        totalQuarters,
+        lastUpdated: new Date().toISOString(),
+      },
+
+      source: 'ABS_RES_DWELL',
+
+      // Backward compatibility (use 10-year as default)
+      houseGrowthRate: houseScenarios.tenYear,
+      unitGrowthRate: unitScenarios.tenYear,
+      allResidentialGrowthRate: allResidentialScenarios.tenYear,
       period: latestPeriod,
       lastUpdated: new Date().toISOString(),
-      source: 'ABS_RES_DWELL',
     };
   } catch (error) {
     console.error('Failed to fetch Brisbane growth rates:', error);

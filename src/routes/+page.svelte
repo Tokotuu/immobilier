@@ -66,15 +66,52 @@
       </div>
 
       {#if data.absData}
-        <div class="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-          <p class="text-sm font-medium text-purple-900 mb-1">
-            Official Brisbane Growth Rates (10-year average from ABS):
-          </p>
-          <div class="flex gap-4 text-xs text-purple-800">
-            <span>Houses: <strong>{(data.absData.houseGrowthRate * 100).toFixed(2)}%/year</strong></span>
-            <span>Units: <strong>{(data.absData.unitGrowthRate * 100).toFixed(2)}%/year</strong></span>
-            <span>All Residential: <strong>{(data.absData.allResidentialGrowthRate * 100).toFixed(2)}%/year</strong></span>
+        <div class="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-sm font-medium text-purple-900">
+              📊 Official Brisbane Property Growth Rates (ABS Data)
+            </p>
+            <span class="text-xs text-purple-700">
+              {data.absData.metadata?.totalQuarters || 0} quarters •
+              {data.absData.metadata?.firstPeriod} to {formatQuarter(data.absData.metadata?.latestPeriod || '')}
+            </span>
           </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+            <div class="bg-white rounded-md p-2 border border-purple-100">
+              <div class="text-xs text-gray-600 mb-1">5-Year (Optimistic)</div>
+              <div class="text-sm font-semibold text-blue-700">
+                Houses: {(data.absData.houses.fiveYear * 100).toFixed(2)}%
+              </div>
+              <div class="text-sm font-semibold text-blue-600">
+                Units: {(data.absData.units.fiveYear * 100).toFixed(2)}%
+              </div>
+            </div>
+
+            <div class="bg-white rounded-md p-2 border border-green-200 ring-2 ring-green-400">
+              <div class="text-xs text-gray-600 mb-1">10-Year (Balanced) ⭐</div>
+              <div class="text-sm font-semibold text-green-700">
+                Houses: {(data.absData.houses.tenYear * 100).toFixed(2)}%
+              </div>
+              <div class="text-sm font-semibold text-green-600">
+                Units: {(data.absData.units.tenYear * 100).toFixed(2)}%
+              </div>
+            </div>
+
+            <div class="bg-white rounded-md p-2 border border-purple-100">
+              <div class="text-xs text-gray-600 mb-1">15-Year (Conservative)</div>
+              <div class="text-sm font-semibold text-amber-700">
+                Houses: {(data.absData.houses.fifteenYear * 100).toFixed(2)}%
+              </div>
+              <div class="text-sm font-semibold text-amber-600">
+                Units: {(data.absData.units.fifteenYear * 100).toFixed(2)}%
+              </div>
+            </div>
+          </div>
+
+          <p class="mt-2 text-xs text-purple-700">
+            💡 Tip: Select your preferred scenario when calculating below. Default is 10-year (balanced).
+          </p>
         </div>
       {/if}
     </div>

@@ -12,19 +12,23 @@
   let { onCalculate, absData = null }: Props = $props();
 
   // Form state
-  let propertyPrice = $state(100000);
-  let depositPercent = $state(5);
+  let propertyPrice = $state(750000);
+  let depositPercent = $state(20);
   let isFirstHome = $state(true);
   let use5PercentScheme = $state(false);
-  let annualIncome = $state(300000);
+  let annualIncome = $state(90000);
   let loanInterestRate = $state(LOAN_DEFAULTS.interestRate * 100); // Convert to percentage
   let loanTermYears = $state(LOAN_DEFAULTS.loanTermYears);
-  let weeklyRent = $state(800);
+  let weeklyRent = $state(600);
 
   // Property characteristics
   let propertyType = $state<'house' | 'unit' | 'townhouse'>('house');
   let selectedSuburb = $state<string>('');
   let useAutoGrowthRate = $state(true); // Auto-calculate growth rate from selections
+
+  // Growth rate scenario selection
+  type GrowthScenario = 'fiveYear' | 'tenYear' | 'fifteenYear';
+  let selectedScenario = $state<GrowthScenario>('tenYear'); // Default to balanced 10-year
 
   // Advanced options
   let showAdvanced = $state(false);
@@ -35,26 +39,31 @@
   let manualPropertyGrowthRate = $state(5.0); // Manual override
   let rentalYieldGrowthRate = $state(3.0); // As percentage
 
-  // Auto-calculated growth rate based on suburb and property type
-  let autoPropertyGrowthRate = $derived(() => {
+  // Auto-calculated growth rate based on suburb, property type, and scenario
+  let autoPropertyGrowthRate = $derived.by(() => {
     // If no suburb selected, use ABS official data if available
     if (!selectedSuburb) {
       if (absData) {
-        // Use official ABS data based on property type
+        // Use official ABS data based on property type and selected scenario
+        let scenarioData;
+
         if (propertyType === 'house') {
-          return absData.houseGrowthRate * 100;
+          scenarioData = absData.houses;
         } else if (propertyType === 'unit') {
-          return absData.unitGrowthRate * 100;
+          scenarioData = absData.units;
         } else {
-          // Townhouse: average of house and unit from ABS
-          return ((absData.houseGrowthRate + absData.unitGrowthRate) / 2) * 100;
+          // Townhouse: use allResidential average
+          scenarioData = absData.allResidential;
         }
+
+        // Get the growth rate for the selected scenario
+        return scenarioData[selectedScenario] * 100;
       }
       // Fallback to Brisbane 30-year average
       return 5.1;
     }
 
-    // Use suburb-specific data
+    // Use suburb-specific data (these don't have scenarios, so ignore scenario selection)
     if (propertyType === 'townhouse') {
       const houseRate = getGrowthRate(selectedSuburb, 'house');
       const unitRate = getGrowthRate(selectedSuburb, 'unit');
@@ -104,6 +113,21 @@
       }),
     };
 
+    // Validation: Check for NaN values
+    const hasInvalidValues = Object.entries(inputs).some(([key, value]) => {
+      if (typeof value === 'number' && (isNaN(value) || !isFinite(value))) {
+        console.error(`Invalid value for ${key}:`, value);
+        return true;
+      }
+      return false;
+    });
+
+    if (hasInvalidValues) {
+      alert('Error: Invalid input values detected. Please check your inputs and try again.');
+      return;
+    }
+
+    console.log('Calculator inputs:', inputs);
     onCalculate(inputs);
   }
 
@@ -191,11 +215,96 @@
         </optgroup>
       </select>
       {#if selectedSuburb}
-        <p class="mt-1 text-sm text-green-600 font-medium">
+        <p class="mt-1 text-sm text-amber-600 font-medium">
           📍 Estimated growth rate: {propertyGrowthRate.toFixed(2)}%/year ({propertyType})
+          <span class="text-xs text-gray-500">(suburb estimate)</span>
         </p>
       {/if}
     </div>
+
+    {#if !selectedSuburb && absData}
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          Growth Rate Scenario (ABS Official Data)
+        </label>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label class="relative flex cursor-pointer rounded-lg border border-gray-300 bg-white p-4 shadow-sm focus:outline-none {selectedScenario === 'fiveYear' ? 'border-blue-600 ring-2 ring-blue-600' : 'hover:border-gray-400'}">
+            <input
+              type="radio"
+              bind:group={selectedScenario}
+              value="fiveYear"
+              class="sr-only"
+            />
+            <span class="flex flex-1 flex-col">
+              <span class="block text-sm font-medium text-gray-900">
+                Optimistic (5-year)
+              </span>
+              <span class="mt-1 flex items-center text-sm text-gray-500">
+                Recent trends
+              </span>
+              <span class="mt-2 text-lg font-semibold text-blue-600">
+                {absData.houses.fiveYear ? (absData.houses.fiveYear * 100).toFixed(2) : '---'}%
+                <span class="text-xs text-gray-500">houses</span>
+              </span>
+            </span>
+            {#if selectedScenario === 'fiveYear'}
+              <span class="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs">✓</span>
+            {/if}
+          </label>
+
+          <label class="relative flex cursor-pointer rounded-lg border border-gray-300 bg-white p-4 shadow-sm focus:outline-none {selectedScenario === 'tenYear' ? 'border-green-600 ring-2 ring-green-600' : 'hover:border-gray-400'}">
+            <input
+              type="radio"
+              bind:group={selectedScenario}
+              value="tenYear"
+              class="sr-only"
+            />
+            <span class="flex flex-1 flex-col">
+              <span class="block text-sm font-medium text-gray-900">
+                Balanced (10-year) ⭐
+              </span>
+              <span class="mt-1 flex items-center text-sm text-gray-500">
+                Full property cycle
+              </span>
+              <span class="mt-2 text-lg font-semibold text-green-600">
+                {absData.houses.tenYear ? (absData.houses.tenYear * 100).toFixed(2) : '---'}%
+                <span class="text-xs text-gray-500">houses</span>
+              </span>
+            </span>
+            {#if selectedScenario === 'tenYear'}
+              <span class="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-green-600 flex items-center justify-center text-white text-xs">✓</span>
+            {/if}
+          </label>
+
+          <label class="relative flex cursor-pointer rounded-lg border border-gray-300 bg-white p-4 shadow-sm focus:outline-none {selectedScenario === 'fifteenYear' ? 'border-amber-600 ring-2 ring-amber-600' : 'hover:border-gray-400'}">
+            <input
+              type="radio"
+              bind:group={selectedScenario}
+              value="fifteenYear"
+              class="sr-only"
+            />
+            <span class="flex flex-1 flex-col">
+              <span class="block text-sm font-medium text-gray-900">
+                Conservative (15-year)
+              </span>
+              <span class="mt-1 flex items-center text-sm text-gray-500">
+                Long-term view
+              </span>
+              <span class="mt-2 text-lg font-semibold text-amber-600">
+                {absData.houses.fifteenYear ? (absData.houses.fifteenYear * 100).toFixed(2) : '---'}%
+                <span class="text-xs text-gray-500">houses</span>
+              </span>
+            </span>
+            {#if selectedScenario === 'fifteenYear'}
+              <span class="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-amber-600 flex items-center justify-center text-white text-xs">✓</span>
+            {/if}
+          </label>
+        </div>
+        <p class="mt-2 text-xs text-gray-600">
+          Current rate: <strong>{propertyGrowthRate.toFixed(2)}%/year</strong> for {propertyType}s
+        </p>
+      </div>
+    {/if}
 
     <div>
       <label for="depositPercent" class="block text-sm font-medium text-gray-700">
